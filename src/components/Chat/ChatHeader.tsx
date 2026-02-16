@@ -12,14 +12,14 @@ export function ChatHeader({ mode, onModeChange }: ChatHeaderProps) {
 
   return (
     <header className="flex items-center justify-between px-4 py-3 border-b border-border bg-card/80 backdrop-blur-xl">
-      <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-xl gemrock-gradient flex items-center justify-center gemrock-glow">
+      <div className="flex items-center gap-3 min-w-0">
+        <div className="w-9 h-9 rounded-xl gemrock-gradient flex items-center justify-center gemrock-glow shrink-0">
           <span className="text-lg">💎</span>
         </div>
-        <div>
-          <h1 className="text-base font-semibold tracking-tight text-foreground">GemRock</h1>
-          <p className="text-[11px] text-muted-foreground">
-            {mode === 'online' ? 'Mixtral 8x7B' : 'Vault Mode'}
+        <div className="min-w-0">
+          <h1 className="text-base font-semibold tracking-tight text-foreground leading-tight">GemRock</h1>
+          <p className="text-[11px] text-muted-foreground leading-tight mt-0.5">
+            {mode === 'online' ? 'Llama 3.1 8B' : 'Vault Mode'}
           </p>
         </div>
       </div>
