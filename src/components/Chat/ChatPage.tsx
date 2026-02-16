@@ -1,18 +1,35 @@
 import { useState, useRef, useEffect } from 'react';
 import { ChatHeader } from './ChatHeader';
-import { ChatBubble, TypingIndicator } from './ChatBubble';
-import { ChatInput } from './ChatInput';
+import { ChatBubble, TypingIndicator, type MessageAttachment } from './ChatBubble';
+import { ChatInput, type ChatAttachment } from './ChatInput';
 import { AuthModal } from '../Auth/AuthModal';
 import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
-type Message = { role: 'user' | 'assistant'; content: string };
+type Message = {
+  role: 'user' | 'assistant';
+  content: string;
+  attachments?: MessageAttachment[];
+};
 
 const OFFLINE_RESPONSES = [
   "sono in modalità offline. Posso accedere solo ai dati salvati localmente. 🔒",
   "al momento sono in modalità Vault. Le mie risposte si basano sui dati cached. 💾",
   "sto operando offline. Posso comunque aiutarti con informazioni generali! 📦",
 ];
+
+async function uploadToStorage(file: File, userId: string): Promise<string | null> {
+  const ext = file.name.split('.').pop();
+  const path = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  const { error } = await supabase.storage.from('chat-files').upload(path, file);
+  if (error) {
+    console.error('Upload error:', error);
+    return null;
+  }
+  const { data } = supabase.storage.from('chat-files').getPublicUrl(path);
+  return data.publicUrl;
+}
 
 export function ChatPage() {
   const { user, getUserName } = useAuth();
@@ -24,23 +41,52 @@ export function ChatPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const messages = mode === 'online' ? onlineMessages : offlineMessages;
-  const setMessages = mode === 'online' ? setOnlineMessages : setOfflineMessages;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
-  const handleSend = async (input: string) => {
+  const handleSend = async (input: string, chatAttachments?: ChatAttachment[]) => {
     if (!user) {
       setShowAuth(true);
       return;
     }
 
     const userName = getUserName();
-    const userMsg: Message = { role: 'user', content: input };
     const currentMode = mode;
     const setSetter = currentMode === 'online' ? setOnlineMessages : setOfflineMessages;
     const currentMessages = currentMode === 'online' ? onlineMessages : offlineMessages;
+
+    // Process attachments
+    let messageAttachments: MessageAttachment[] | undefined;
+    if (chatAttachments && chatAttachments.length > 0) {
+      if (currentMode === 'online') {
+        // Upload to storage
+        const uploaded = await Promise.all(
+          chatAttachments.map(async (att) => {
+            const url = await uploadToStorage(att.file, user.id);
+            return url ? { url, name: att.file.name, type: att.type } : null;
+          })
+        );
+        messageAttachments = uploaded.filter(Boolean) as MessageAttachment[];
+        if (messageAttachments.length < chatAttachments.length) {
+          toast.error('Alcuni file non sono stati caricati');
+        }
+      } else {
+        // Offline: use local blob URLs
+        messageAttachments = chatAttachments.map((att) => ({
+          url: att.previewUrl,
+          name: att.file.name,
+          type: att.type,
+        }));
+      }
+    }
+
+    const userMsg: Message = {
+      role: 'user',
+      content: input,
+      attachments: messageAttachments,
+    };
     setSetter((prev) => [...prev, userMsg]);
     setIsLoading(true);
 
@@ -48,7 +94,10 @@ export function ChatPage() {
       setTimeout(() => {
         const prefix = userName ? `Ciao ${userName}, ` : '';
         const randomResponse = OFFLINE_RESPONSES[Math.floor(Math.random() * OFFLINE_RESPONSES.length)];
-        setSetter((prev) => [...prev, { role: 'assistant', content: prefix + randomResponse }]);
+        const fileNote = messageAttachments?.length
+          ? `\n\n📎 Ho ricevuto ${messageAttachments.length} file. In modalità offline posso solo visualizzarli localmente.`
+          : '';
+        setSetter((prev) => [...prev, { role: 'assistant', content: prefix + randomResponse + fileNote }]);
         setIsLoading(false);
       }, 800);
       return;
@@ -58,6 +107,10 @@ export function ChatPage() {
     try {
       const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat-groq`;
 
+      const textContent = messageAttachments?.length
+        ? `${input}\n\n[L'utente ha allegato ${messageAttachments.length} file: ${messageAttachments.map((a) => a.name).join(', ')}]`
+        : input;
+
       const resp = await fetch(CHAT_URL, {
         method: 'POST',
         headers: {
@@ -65,7 +118,10 @@ export function ChatPage() {
           Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
         body: JSON.stringify({
-          messages: [...currentMessages, userMsg].map((m) => ({ role: m.role, content: m.content })),
+          messages: [...currentMessages, { role: 'user', content: textContent }].map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
           userName,
         }),
       });
@@ -106,15 +162,15 @@ export function ChatPage() {
           try {
             const parsed = JSON.parse(jsonStr);
             const content = parsed.choices?.[0]?.delta?.content as string | undefined;
-              if (content) {
-                assistantSoFar += content;
-                setSetter((prev) => {
-                  const last = prev[prev.length - 1];
-                  if (last?.role === 'assistant') {
-                    return prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantSoFar } : m);
-                  }
-                  return [...prev, { role: 'assistant', content: assistantSoFar }];
-                });
+            if (content) {
+              assistantSoFar += content;
+              setSetter((prev) => {
+                const last = prev[prev.length - 1];
+                if (last?.role === 'assistant') {
+                  return prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantSoFar } : m);
+                }
+                return [...prev, { role: 'assistant', content: assistantSoFar }];
+              });
             }
           } catch {
             textBuffer = line + '\n' + textBuffer;
@@ -153,7 +209,7 @@ export function ChatPage() {
         )}
 
         {messages.map((msg, i) => (
-          <ChatBubble key={i} role={msg.role} content={msg.content} />
+          <ChatBubble key={i} role={msg.role} content={msg.content} attachments={msg.attachments} />
         ))}
 
         {isLoading && <TypingIndicator />}
