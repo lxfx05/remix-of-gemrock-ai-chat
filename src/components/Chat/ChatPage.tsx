@@ -16,18 +16,21 @@ const OFFLINE_RESPONSES = [
 
 export function ChatPage() {
   const { user, getUserName } = useAuth();
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [onlineMessages, setOnlineMessages] = useState<Message[]>([]);
+  const [offlineMessages, setOfflineMessages] = useState<Message[]>([]);
   const [mode, setMode] = useState<'online' | 'offline'>('online');
   const [isLoading, setIsLoading] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const messages = mode === 'online' ? onlineMessages : offlineMessages;
+  const setMessages = mode === 'online' ? setOnlineMessages : setOfflineMessages;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
   const handleSend = async (input: string) => {
-    // Lazy auth: block sending if not authenticated
     if (!user) {
       setShowAuth(true);
       return;
@@ -35,15 +38,17 @@ export function ChatPage() {
 
     const userName = getUserName();
     const userMsg: Message = { role: 'user', content: input };
-    setMessages((prev) => [...prev, userMsg]);
+    const currentMode = mode;
+    const setSetter = currentMode === 'online' ? setOnlineMessages : setOfflineMessages;
+    const currentMessages = currentMode === 'online' ? onlineMessages : offlineMessages;
+    setSetter((prev) => [...prev, userMsg]);
     setIsLoading(true);
 
-    if (mode === 'offline') {
-      // Simulate offline response
+    if (currentMode === 'offline') {
       setTimeout(() => {
         const prefix = userName ? `Ciao ${userName}, ` : '';
         const randomResponse = OFFLINE_RESPONSES[Math.floor(Math.random() * OFFLINE_RESPONSES.length)];
-        setMessages((prev) => [...prev, { role: 'assistant', content: prefix + randomResponse }]);
+        setSetter((prev) => [...prev, { role: 'assistant', content: prefix + randomResponse }]);
         setIsLoading(false);
       }, 800);
       return;
@@ -60,7 +65,7 @@ export function ChatPage() {
           Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
         body: JSON.stringify({
-          messages: [...messages, userMsg].map((m) => ({ role: m.role, content: m.content })),
+          messages: [...currentMessages, userMsg].map((m) => ({ role: m.role, content: m.content })),
           userName,
         }),
       });
@@ -101,15 +106,15 @@ export function ChatPage() {
           try {
             const parsed = JSON.parse(jsonStr);
             const content = parsed.choices?.[0]?.delta?.content as string | undefined;
-            if (content) {
-              assistantSoFar += content;
-              setMessages((prev) => {
-                const last = prev[prev.length - 1];
-                if (last?.role === 'assistant') {
-                  return prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantSoFar } : m);
-                }
-                return [...prev, { role: 'assistant', content: assistantSoFar }];
-              });
+              if (content) {
+                assistantSoFar += content;
+                setSetter((prev) => {
+                  const last = prev[prev.length - 1];
+                  if (last?.role === 'assistant') {
+                    return prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantSoFar } : m);
+                  }
+                  return [...prev, { role: 'assistant', content: assistantSoFar }];
+                });
             }
           } catch {
             textBuffer = line + '\n' + textBuffer;
