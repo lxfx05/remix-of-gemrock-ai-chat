@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { ChatHeader } from './ChatHeader';
-import { ChatBubble, TypingIndicator, type MessageAttachment } from './ChatBubble';
-import { ChatInput, type ChatAttachment } from './ChatInput';
+import { ChatBubble, TypingIndicator } from './ChatBubble';
+import { ChatInput } from './ChatInput';
+import { ChatSidebar } from './ChatSidebar';
 import { AuthModal } from '../Auth/AuthModal';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -10,26 +11,15 @@ import { toast } from 'sonner';
 type Message = {
   role: 'user' | 'assistant';
   content: string;
-  attachments?: MessageAttachment[];
 };
 
 const OFFLINE_RESPONSES = [
   "sono in modalità offline. Posso accedere solo ai dati salvati localmente. 🔒",
   "al momento sono in modalità Vault. Le mie risposte si basano sui dati cached. 💾",
   "sto operando offline. Posso comunque aiutarti con informazioni generali! 📦",
+  "sono offline ma posso comunque rispondere con le mie conoscenze di base. 🧠",
+  "modalità offline attiva. Ti aiuto con quello che so! ⚡",
 ];
-
-async function uploadToStorage(file: File, userId: string): Promise<string | null> {
-  const ext = file.name.split('.').pop();
-  const path = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-  const { error } = await supabase.storage.from('chat-files').upload(path, file);
-  if (error) {
-    console.error('Upload error:', error);
-    return null;
-  }
-  const { data } = supabase.storage.from('chat-files').getPublicUrl(path);
-  return data.publicUrl;
-}
 
 export function ChatPage() {
   const { user, getUserName } = useAuth();
@@ -38,6 +28,8 @@ export function ChatPage() {
   const [mode, setMode] = useState<'online' | 'offline'>('online');
   const [isLoading, setIsLoading] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const messages = mode === 'online' ? onlineMessages : offlineMessages;
@@ -46,7 +38,65 @@ export function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
-  const handleSend = async (input: string, chatAttachments?: ChatAttachment[]) => {
+  const handleNewChat = () => {
+    setActiveConversationId(null);
+    setOnlineMessages([]);
+    setOfflineMessages([]);
+  };
+
+  const handleSelectConversation = async (id: string) => {
+    setActiveConversationId(id);
+    if (!user) return;
+    const { data } = await supabase
+      .from('chat_messages')
+      .select('role, content')
+      .eq('conversation_id', id)
+      .order('created_at', { ascending: true });
+    if (data) {
+      const msgs = data.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+      // Load into appropriate mode based on conversation mode
+      const { data: conv } = await supabase
+        .from('conversations')
+        .select('mode')
+        .eq('id', id)
+        .single();
+      if (conv?.mode === 'offline') {
+        setOfflineMessages(msgs);
+        setMode('offline');
+      } else {
+        setOnlineMessages(msgs);
+        setMode('online');
+      }
+    }
+  };
+
+  const saveMessageToDb = async (conversationId: string, role: string, content: string) => {
+    if (!user) return;
+    await supabase.from('chat_messages').insert({
+      user_id: user.id,
+      conversation_id: conversationId,
+      role,
+      content,
+      mode,
+    });
+  };
+
+  const getOrCreateConversation = async (firstMessage: string): Promise<string | null> => {
+    if (!user) return null;
+    if (activeConversationId) return activeConversationId;
+
+    const title = firstMessage.slice(0, 50) + (firstMessage.length > 50 ? '...' : '');
+    const { data, error } = await supabase
+      .from('conversations')
+      .insert({ user_id: user.id, title, mode })
+      .select('id')
+      .single();
+    if (error || !data) return null;
+    setActiveConversationId(data.id);
+    return data.id;
+  };
+
+  const handleSend = async (input: string) => {
     if (!user) {
       setShowAuth(true);
       return;
@@ -57,60 +107,28 @@ export function ChatPage() {
     const setSetter = currentMode === 'online' ? setOnlineMessages : setOfflineMessages;
     const currentMessages = currentMode === 'online' ? onlineMessages : offlineMessages;
 
-    // Process attachments
-    let messageAttachments: MessageAttachment[] | undefined;
-    if (chatAttachments && chatAttachments.length > 0) {
-      if (currentMode === 'online') {
-        // Upload to storage
-        const uploaded = await Promise.all(
-          chatAttachments.map(async (att) => {
-            const url = await uploadToStorage(att.file, user.id);
-            return url ? { url, name: att.file.name, type: att.type } : null;
-          })
-        );
-        messageAttachments = uploaded.filter(Boolean) as MessageAttachment[];
-        if (messageAttachments.length < chatAttachments.length) {
-          toast.error('Alcuni file non sono stati caricati');
-        }
-      } else {
-        // Offline: use local blob URLs
-        messageAttachments = chatAttachments.map((att) => ({
-          url: att.previewUrl,
-          name: att.file.name,
-          type: att.type,
-        }));
-      }
-    }
-
-    const userMsg: Message = {
-      role: 'user',
-      content: input,
-      attachments: messageAttachments,
-    };
-    setSetter((prev) => [...prev, userMsg]);
+    const userMsg: Message = { role: 'user', content: input };
+    setSetter(prev => [...prev, userMsg]);
     setIsLoading(true);
 
+    const convId = await getOrCreateConversation(input);
+    if (convId) await saveMessageToDb(convId, 'user', input);
+
     if (currentMode === 'offline') {
-      setTimeout(() => {
+      setTimeout(async () => {
         const prefix = userName ? `Ciao ${userName}, ` : '';
         const randomResponse = OFFLINE_RESPONSES[Math.floor(Math.random() * OFFLINE_RESPONSES.length)];
-        const fileNote = messageAttachments?.length
-          ? `\n\n📎 Ho ricevuto ${messageAttachments.length} file. In modalità offline posso solo visualizzarli localmente.`
-          : '';
-        setSetter((prev) => [...prev, { role: 'assistant', content: prefix + randomResponse + fileNote }]);
+        const assistantContent = prefix + randomResponse;
+        setSetter(prev => [...prev, { role: 'assistant', content: assistantContent }]);
+        if (convId) await saveMessageToDb(convId, 'assistant', assistantContent);
         setIsLoading(false);
       }, 800);
       return;
     }
 
-    // Online mode: stream from Groq via edge function
+    // Online mode: stream from Groq
     try {
       const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat-groq`;
-
-      const textContent = messageAttachments?.length
-        ? `${input}\n\n[L'utente ha allegato ${messageAttachments.length} file: ${messageAttachments.map((a) => a.name).join(', ')}]`
-        : input;
-
       const resp = await fetch(CHAT_URL, {
         method: 'POST',
         headers: {
@@ -118,7 +136,7 @@ export function ChatPage() {
           Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
         body: JSON.stringify({
-          messages: [...currentMessages, { role: 'user', content: textContent }].map((m) => ({
+          messages: [...currentMessages, { role: 'user', content: input }].map(m => ({
             role: m.role,
             content: m.content,
           })),
@@ -164,7 +182,7 @@ export function ChatPage() {
             const content = parsed.choices?.[0]?.delta?.content as string | undefined;
             if (content) {
               assistantSoFar += content;
-              setSetter((prev) => {
+              setSetter(prev => {
                 const last = prev[prev.length - 1];
                 if (last?.role === 'assistant') {
                   return prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantSoFar } : m);
@@ -178,6 +196,10 @@ export function ChatPage() {
           }
         }
       }
+
+      if (convId && assistantSoFar) {
+        await saveMessageToDb(convId, 'assistant', assistantSoFar);
+      }
     } catch (e) {
       console.error(e);
       toast.error('Errore di connessione');
@@ -188,7 +210,19 @@ export function ChatPage() {
 
   return (
     <div className="flex flex-col h-screen bg-background">
-      <ChatHeader mode={mode} onModeChange={setMode} />
+      <ChatSidebar
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        activeConversationId={activeConversationId}
+        onSelectConversation={handleSelectConversation}
+        onNewChat={handleNewChat}
+      />
+
+      <ChatHeader
+        mode={mode}
+        onModeChange={setMode}
+        onToggleSidebar={() => setSidebarOpen(prev => !prev)}
+      />
 
       <div className="flex-1 overflow-y-auto scrollbar-thin px-4 py-4 space-y-3">
         {messages.length === 0 && (
@@ -201,7 +235,7 @@ export function ChatPage() {
               Il tuo assistente AI personale. Scrivi un messaggio per iniziare la conversazione.
             </p>
             {!user && (
-              <p className="text-xs text-gemrock-zinc-light mt-4 bg-secondary px-4 py-2 rounded-xl">
+              <p className="text-xs text-muted-foreground mt-4 bg-secondary px-4 py-2 rounded-xl animate-pulse">
                 🔒 Effettua l'accesso per inviare messaggi
               </p>
             )}
@@ -209,7 +243,7 @@ export function ChatPage() {
         )}
 
         {messages.map((msg, i) => (
-          <ChatBubble key={i} role={msg.role} content={msg.content} attachments={msg.attachments} />
+          <ChatBubble key={i} role={msg.role} content={msg.content} />
         ))}
 
         {isLoading && <TypingIndicator />}
