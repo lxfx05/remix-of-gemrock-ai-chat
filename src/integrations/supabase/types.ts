@@ -17,6 +17,7 @@ export type Database = {
       chat_messages: {
         Row: {
           content: string
+          conversation_id: string | null
           created_at: string
           id: string
           mode: string
@@ -25,6 +26,7 @@ export type Database = {
         }
         Insert: {
           content: string
+          conversation_id?: string | null
           created_at?: string
           id?: string
           mode?: string
@@ -33,11 +35,86 @@ export type Database = {
         }
         Update: {
           content?: string
+          conversation_id?: string | null
           created_at?: string
           id?: string
           mode?: string
           role?: string
           user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      conversations: {
+        Row: {
+          created_at: string
+          id: string
+          mode: string
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          mode?: string
+          title?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          mode?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      email_otps: {
+        Row: {
+          created_at: string
+          email: string
+          expires_at: string
+          first_name: string | null
+          id: string
+          last_name: string | null
+          otp_code: string
+          password_hash: string | null
+          phone: string | null
+          verified: boolean
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          expires_at: string
+          first_name?: string | null
+          id?: string
+          last_name?: string | null
+          otp_code: string
+          password_hash?: string | null
+          phone?: string | null
+          verified?: boolean
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          expires_at?: string
+          first_name?: string | null
+          id?: string
+          last_name?: string | null
+          otp_code?: string
+          password_hash?: string | null
+          phone?: string | null
+          verified?: boolean
         }
         Relationships: []
       }
@@ -65,6 +142,36 @@ export type Database = {
           last_name?: string
           phone?: string
           user_id?: string | null
+        }
+        Relationships: []
+      }
+      user_files: {
+        Row: {
+          created_at: string
+          file_name: string
+          file_size: number
+          file_type: string
+          file_url: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          file_name: string
+          file_size?: number
+          file_type: string
+          file_url: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          file_name?: string
+          file_size?: number
+          file_type?: string
+          file_url?: string
+          id?: string
+          user_id?: string
         }
         Relationships: []
       }
