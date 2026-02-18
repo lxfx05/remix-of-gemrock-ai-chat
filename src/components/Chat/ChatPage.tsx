@@ -13,26 +13,14 @@ type Message = {
   content: string;
 };
 
-const OFFLINE_RESPONSES = [
-  "sono in modalità offline. Posso accedere solo ai dati salvati localmente. 🔒",
-  "al momento sono in modalità Vault. Le mie risposte si basano sui dati cached. 💾",
-  "sto operando offline. Posso comunque aiutarti con informazioni generali! 📦",
-  "sono offline ma posso comunque rispondere con le mie conoscenze di base. 🧠",
-  "modalità offline attiva. Ti aiuto con quello che so! ⚡",
-];
-
 export function ChatPage() {
   const { user, getUserName } = useAuth();
-  const [onlineMessages, setOnlineMessages] = useState<Message[]>([]);
-  const [offlineMessages, setOfflineMessages] = useState<Message[]>([]);
-  const [mode, setMode] = useState<'online' | 'offline'>('online');
+  const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-
-  const messages = mode === 'online' ? onlineMessages : offlineMessages;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -40,8 +28,7 @@ export function ChatPage() {
 
   const handleNewChat = () => {
     setActiveConversationId(null);
-    setOnlineMessages([]);
-    setOfflineMessages([]);
+    setMessages([]);
   };
 
   const handleSelectConversation = async (id: string) => {
@@ -53,20 +40,7 @@ export function ChatPage() {
       .eq('conversation_id', id)
       .order('created_at', { ascending: true });
     if (data) {
-      const msgs = data.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
-      // Load into appropriate mode based on conversation mode
-      const { data: conv } = await supabase
-        .from('conversations')
-        .select('mode')
-        .eq('id', id)
-        .single();
-      if (conv?.mode === 'offline') {
-        setOfflineMessages(msgs);
-        setMode('offline');
-      } else {
-        setOnlineMessages(msgs);
-        setMode('online');
-      }
+      setMessages(data.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })));
     }
   };
 
@@ -77,18 +51,17 @@ export function ChatPage() {
       conversation_id: conversationId,
       role,
       content,
-      mode,
+      mode: 'online',
     });
   };
 
   const getOrCreateConversation = async (firstMessage: string): Promise<string | null> => {
     if (!user) return null;
     if (activeConversationId) return activeConversationId;
-
     const title = firstMessage.slice(0, 50) + (firstMessage.length > 50 ? '...' : '');
     const { data, error } = await supabase
       .from('conversations')
-      .insert({ user_id: user.id, title, mode })
+      .insert({ user_id: user.id, title, mode: 'online' })
       .select('id')
       .single();
     if (error || !data) return null;
@@ -96,37 +69,56 @@ export function ChatPage() {
     return data.id;
   };
 
-  const handleSend = async (input: string) => {
+  const uploadFiles = async (files: File[]): Promise<string[]> => {
+    if (!user) return [];
+    const urls: string[] = [];
+    for (const file of files) {
+      const path = `${user.id}/${Date.now()}_${file.name}`;
+      const { error } = await supabase.storage.from('chat-files').upload(path, file);
+      if (error) {
+        toast.error(`Errore upload: ${file.name}`);
+        continue;
+      }
+      const { data: urlData } = supabase.storage.from('chat-files').getPublicUrl(path);
+      urls.push(urlData.publicUrl);
+      // Save file reference
+      await supabase.from('user_files').insert({
+        user_id: user.id,
+        file_name: file.name,
+        file_url: urlData.publicUrl,
+        file_type: file.type || 'unknown',
+        file_size: file.size,
+      });
+    }
+    return urls;
+  };
+
+  const handleSend = async (input: string, files?: File[]) => {
     if (!user) {
       setShowAuth(true);
       return;
     }
 
-    const userName = getUserName();
-    const currentMode = mode;
-    const setSetter = currentMode === 'online' ? setOnlineMessages : setOfflineMessages;
-    const currentMessages = currentMode === 'online' ? onlineMessages : offlineMessages;
+    let messageContent = input;
 
-    const userMsg: Message = { role: 'user', content: input };
-    setSetter(prev => [...prev, userMsg]);
-    setIsLoading(true);
-
-    const convId = await getOrCreateConversation(input);
-    if (convId) await saveMessageToDb(convId, 'user', input);
-
-    if (currentMode === 'offline') {
-      setTimeout(async () => {
-        const prefix = userName ? `Ciao ${userName}, ` : '';
-        const randomResponse = OFFLINE_RESPONSES[Math.floor(Math.random() * OFFLINE_RESPONSES.length)];
-        const assistantContent = prefix + randomResponse;
-        setSetter(prev => [...prev, { role: 'assistant', content: assistantContent }]);
-        if (convId) await saveMessageToDb(convId, 'assistant', assistantContent);
-        setIsLoading(false);
-      }, 800);
-      return;
+    // Upload files if any
+    if (files && files.length > 0) {
+      const urls = await uploadFiles(files);
+      if (urls.length > 0) {
+        const fileRefs = urls.map(u => `📎 ${u}`).join('\n');
+        messageContent = messageContent ? `${messageContent}\n\n${fileRefs}` : fileRefs;
+      }
     }
 
-    // Online mode: stream from Groq
+    if (!messageContent) return;
+
+    const userMsg: Message = { role: 'user', content: messageContent };
+    setMessages(prev => [...prev, userMsg]);
+    setIsLoading(true);
+
+    const convId = await getOrCreateConversation(input || 'File condiviso');
+    if (convId) await saveMessageToDb(convId, 'user', messageContent);
+
     try {
       const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat-groq`;
       const resp = await fetch(CHAT_URL, {
@@ -136,11 +128,11 @@ export function ChatPage() {
           Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
         body: JSON.stringify({
-          messages: [...currentMessages, { role: 'user', content: input }].map(m => ({
+          messages: [...messages, { role: 'user', content: messageContent }].map(m => ({
             role: m.role,
             content: m.content,
           })),
-          userName,
+          userName: getUserName(),
         }),
       });
 
@@ -182,7 +174,7 @@ export function ChatPage() {
             const content = parsed.choices?.[0]?.delta?.content as string | undefined;
             if (content) {
               assistantSoFar += content;
-              setSetter(prev => {
+              setMessages(prev => {
                 const last = prev[prev.length - 1];
                 if (last?.role === 'assistant') {
                   return prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantSoFar } : m);
@@ -218,13 +210,9 @@ export function ChatPage() {
         onNewChat={handleNewChat}
       />
 
-      <ChatHeader
-        mode={mode}
-        onModeChange={setMode}
-        onToggleSidebar={() => setSidebarOpen(prev => !prev)}
-      />
+      <ChatHeader onToggleSidebar={() => setSidebarOpen(prev => !prev)} />
 
-      <div className="flex-1 overflow-y-auto scrollbar-thin px-4 py-4 space-y-3">
+      <div className="flex-1 overflow-y-auto scrollbar-thin px-3 sm:px-4 md:px-6 lg:px-8 py-4 space-y-3">
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center animate-fade-in">
             <div className="w-20 h-20 rounded-3xl gemrock-gradient flex items-center justify-center mb-6 gemrock-glow animate-pulse-glow">
@@ -236,7 +224,7 @@ export function ChatPage() {
             </p>
             {!user && (
               <p className="text-xs text-muted-foreground mt-4 bg-secondary px-4 py-2 rounded-xl animate-pulse">
-                🔒 Effettua l'accesso per inviare messaggi
+                🔒 Accedi con Google per inviare messaggi
               </p>
             )}
           </div>

@@ -1,19 +1,16 @@
-import { Wifi, WifiOff, Menu } from 'lucide-react';
+import { Menu } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 
 interface ChatHeaderProps {
-  mode: 'online' | 'offline';
-  onModeChange: (mode: 'online' | 'offline') => void;
   onToggleSidebar: () => void;
 }
 
-export function ChatHeader({ mode, onModeChange, onToggleSidebar }: ChatHeaderProps) {
+export function ChatHeader({ onToggleSidebar }: ChatHeaderProps) {
   const { user } = useAuth();
-
   const avatarUrl = user?.user_metadata?.avatar_url || user?.user_metadata?.picture;
 
   return (
-    <header className="flex items-center justify-between px-4 py-3 border-b border-border bg-card/80 backdrop-blur-xl">
+    <header className="flex items-center justify-between px-3 sm:px-4 md:px-6 py-3 border-b border-border bg-card/80 backdrop-blur-xl">
       <div className="flex items-center gap-3 min-w-0">
         <button
           onClick={onToggleSidebar}
@@ -26,40 +23,11 @@ export function ChatHeader({ mode, onModeChange, onToggleSidebar }: ChatHeaderPr
         </div>
         <div className="min-w-0">
           <h1 className="text-base font-semibold tracking-tight text-foreground leading-tight">GemRock</h1>
-          <p className="text-[11px] text-muted-foreground leading-tight mt-0.5">
-            {mode === 'online' ? '● Online' : '○ Offline'}
-          </p>
+          <p className="text-[11px] text-muted-foreground leading-tight mt-0.5">● Online</p>
         </div>
       </div>
 
       <div className="flex items-center gap-3">
-        {/* Mode Toggle */}
-        <div className="flex items-center bg-secondary rounded-full p-0.5">
-          <button
-            onClick={() => onModeChange('online')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-              mode === 'online'
-                ? 'bg-primary text-primary-foreground shadow-md'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <Wifi size={12} />
-            ONLINE
-          </button>
-          <button
-            onClick={() => onModeChange('offline')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-              mode === 'offline'
-                ? 'bg-gemrock-zinc text-foreground shadow-md'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <WifiOff size={12} />
-            OFFLINE
-          </button>
-        </div>
-
-        {/* User avatar */}
         {user && avatarUrl ? (
           <img
             src={avatarUrl}
