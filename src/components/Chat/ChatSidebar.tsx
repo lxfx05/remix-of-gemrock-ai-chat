@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { X, Plus, MessageSquare, Settings, LogOut, Trash2, Clock, FileText } from 'lucide-react';
+import { X, Plus, MessageSquare, Settings, LogOut, Trash2, Clock, FileText, Link2 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { ServicesPanel } from '../Services/ServicesPanel';
 
 type Conversation = {
   id: string;
@@ -31,7 +32,7 @@ interface ChatSidebarProps {
 export function ChatSidebar({ open, onClose, activeConversationId, onSelectConversation, onNewChat }: ChatSidebarProps) {
   const { user, signOut, getUserName } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [activeTab, setActiveTab] = useState<'history' | 'files' | 'settings'>('history');
+  const [activeTab, setActiveTab] = useState<'history' | 'services' | 'files' | 'settings'>('history');
   const [userFiles, setUserFiles] = useState<UserFile[]>([]);
   const userName = getUserName();
   const avatarUrl = user?.user_metadata?.avatar_url || user?.user_metadata?.picture;
@@ -72,7 +73,6 @@ export function ChatSidebar({ open, onClose, activeConversationId, onSelectConve
   };
 
   const deleteFile = async (id: string, fileUrl: string) => {
-    // Extract path from URL for storage deletion
     const urlParts = fileUrl.split('/chat-files/');
     if (urlParts[1]) {
       await supabase.storage.from('chat-files').remove([urlParts[1]]);
@@ -93,6 +93,13 @@ export function ChatSidebar({ open, onClose, activeConversationId, onSelectConve
     return `${(bytes / 1048576).toFixed(1)} MB`;
   };
 
+  const tabs = [
+    { key: 'history' as const, icon: Clock, label: 'Chat' },
+    { key: 'services' as const, icon: Link2, label: 'Servizi' },
+    { key: 'files' as const, icon: FileText, label: 'File' },
+    { key: 'settings' as const, icon: Settings, label: 'Info' },
+  ];
+
   return (
     <>
       {open && (
@@ -103,12 +110,12 @@ export function ChatSidebar({ open, onClose, activeConversationId, onSelectConve
       )}
 
       <div
-        className={`fixed top-0 left-0 h-full w-72 sm:w-80 bg-card border-r border-border z-50 flex flex-col transition-transform duration-300 ease-out ${
+        className={`fixed top-0 left-0 h-full w-[280px] sm:w-80 bg-card border-r border-border z-50 flex flex-col transition-transform duration-300 ease-out ${
           open ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-border">
+        <div className="flex items-center justify-between p-3 sm:p-4 border-b border-border">
           <div className="flex items-center gap-3">
             {avatarUrl ? (
               <img src={avatarUrl} alt="" className="w-9 h-9 rounded-full border border-border" />
@@ -138,19 +145,15 @@ export function ChatSidebar({ open, onClose, activeConversationId, onSelectConve
 
         {/* Tabs */}
         <div className="flex bg-secondary mx-3 mt-3 rounded-xl p-0.5">
-          {([
-            { key: 'history', icon: Clock, label: 'Chat' },
-            { key: 'files', icon: FileText, label: 'File' },
-            { key: 'settings', icon: Settings, label: 'Info' },
-          ] as const).map((tab) => (
+          {tabs.map((tab) => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className={`flex-1 flex items-center justify-center gap-1 py-2 text-[11px] font-medium rounded-lg transition-all ${
+              className={`flex-1 flex items-center justify-center gap-1 py-2 text-[10px] sm:text-[11px] font-medium rounded-lg transition-all ${
                 activeTab === tab.key ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground'
               }`}
             >
-              <tab.icon size={12} />
+              <tab.icon size={11} />
               {tab.label}
             </button>
           ))}
@@ -194,6 +197,8 @@ export function ChatSidebar({ open, onClose, activeConversationId, onSelectConve
               )}
             </div>
           )}
+
+          {activeTab === 'services' && <ServicesPanel />}
 
           {activeTab === 'files' && (
             <div className="space-y-1">
