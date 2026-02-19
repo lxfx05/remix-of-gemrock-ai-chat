@@ -13,6 +13,25 @@ type Message = {
   content: string;
 };
 
+const TEXT_EXTENSIONS = new Set([
+  'txt', 'md', 'json', 'xml', 'yaml', 'yml', 'toml', 'csv', 'log', 'cfg', 'ini', 'env',
+  'html', 'htm', 'css', 'js', 'ts', 'tsx', 'jsx', 'py', 'c', 'cpp', 'h', 'hpp',
+  'asm', 'rb', 'go', 'rs', 'java', 'php', 'sh', 'bash', 'sql', 'r', 'swift', 'kt',
+]);
+
+async function readFileAsText(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsText(file);
+  });
+}
+
+function getFileExtension(name: string): string {
+  return name.split('.').pop()?.toLowerCase() || '';
+}
+
 export function ChatPage() {
   const { user, getUserName } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -69,31 +88,39 @@ export function ChatPage() {
     return data.id;
   };
 
-  const uploadFiles = async (files: File[]): Promise<string[]> => {
-    if (!user) return [];
-    const urls: string[] = [];
+  const extractFileContents = async (files: File[]): Promise<string> => {
+    const parts: string[] = [];
     for (const file of files) {
-      const path = `${user.id}/${Date.now()}_${file.name}`;
-      const { error } = await supabase.storage.from('chat-files').upload(path, file);
-      if (error) {
-        toast.error(`Errore upload: ${file.name}`);
-        continue;
+      const ext = getFileExtension(file.name);
+      if (TEXT_EXTENSIONS.has(ext)) {
+        try {
+          const text = await readFileAsText(file);
+          const truncated = text.length > 15000 ? text.slice(0, 15000) + '\n\n[...troncato]' : text;
+          parts.push(`📄 **${file.name}**:\n\`\`\`${ext}\n${truncated}\n\`\`\``);
+        } catch {
+          parts.push(`📄 ${file.name}: [errore lettura]`);
+        }
+      } else {
+        // For binary files (PDF, DOC, PPT), try reading as text
+        try {
+          const text = await readFileAsText(file);
+          // Check if it's readable text (not binary garbage)
+          const printable = text.slice(0, 500).replace(/[^\x20-\x7E\n\r\t]/g, '').length;
+          if (printable > text.slice(0, 500).length * 0.5) {
+            const truncated = text.length > 15000 ? text.slice(0, 15000) + '\n\n[...troncato]' : text;
+            parts.push(`📄 **${file.name}**:\n\`\`\`\n${truncated}\n\`\`\``);
+          } else {
+            parts.push(`📄 ${file.name}: [file binario - ${(file.size / 1024).toFixed(1)} KB, formato: ${ext.toUpperCase()}]`);
+          }
+        } catch {
+          parts.push(`📄 ${file.name}: [non leggibile]`);
+        }
       }
-      const { data: urlData } = supabase.storage.from('chat-files').getPublicUrl(path);
-      urls.push(urlData.publicUrl);
-      // Save file reference
-      await supabase.from('user_files').insert({
-        user_id: user.id,
-        file_name: file.name,
-        file_url: urlData.publicUrl,
-        file_type: file.type || 'unknown',
-        file_size: file.size,
-      });
     }
-    return urls;
+    return parts.join('\n\n');
   };
 
-  const handleSend = async (input: string, files?: File[]) => {
+  const handleSend = async (input: string, files?: File[], webSearch?: boolean) => {
     if (!user) {
       setShowAuth(true);
       return;
@@ -101,13 +128,11 @@ export function ChatPage() {
 
     let messageContent = input;
 
-    // Upload files if any
     if (files && files.length > 0) {
-      const urls = await uploadFiles(files);
-      if (urls.length > 0) {
-        const fileRefs = urls.map(u => `📎 ${u}`).join('\n');
-        messageContent = messageContent ? `${messageContent}\n\n${fileRefs}` : fileRefs;
-      }
+      const fileContents = await extractFileContents(files);
+      messageContent = messageContent
+        ? `${messageContent}\n\n${fileContents}`
+        : fileContents;
     }
 
     if (!messageContent) return;
@@ -133,6 +158,7 @@ export function ChatPage() {
             content: m.content,
           })),
           userName: getUserName(),
+          webSearch: !!webSearch,
         }),
       });
 
@@ -201,7 +227,7 @@ export function ChatPage() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-background">
+    <div className="flex flex-col h-screen bg-background overflow-hidden">
       <ChatSidebar
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
@@ -212,9 +238,9 @@ export function ChatPage() {
 
       <ChatHeader onToggleSidebar={() => setSidebarOpen(prev => !prev)} />
 
-      <div className="flex-1 overflow-y-auto scrollbar-thin px-3 sm:px-4 md:px-6 lg:px-8 py-4 space-y-3">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin px-3 sm:px-4 md:px-6 lg:px-8 py-4 space-y-3">
         {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-center animate-fade-in">
+          <div className="flex flex-col items-center justify-center h-full text-center animate-fade-in px-4">
             <div className="w-20 h-20 rounded-3xl gemrock-gradient flex items-center justify-center mb-6 gemrock-glow animate-pulse-glow">
               <span className="text-4xl">💎</span>
             </div>
@@ -224,7 +250,7 @@ export function ChatPage() {
             </p>
             {!user && (
               <p className="text-xs text-muted-foreground mt-4 bg-secondary px-4 py-2 rounded-xl animate-pulse">
-                🔒 Accedi con Google per inviare messaggi
+                🔒 Accedi per inviare messaggi
               </p>
             )}
           </div>

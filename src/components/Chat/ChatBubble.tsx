@@ -33,8 +33,8 @@ export function ChatBubble({ role, content }: ChatBubbleProps) {
   if (isUser) {
     return (
       <div className="flex justify-end animate-fade-in">
-        <div className="max-w-[85%] sm:max-w-[75%] px-4 py-3 text-sm leading-relaxed bg-primary text-primary-foreground rounded-[20px] rounded-br-md">
-          <span className="whitespace-pre-wrap">{content}</span>
+        <div className="max-w-[85%] sm:max-w-[75%] px-4 py-3 text-sm leading-relaxed bg-primary text-primary-foreground rounded-[20px] rounded-br-md break-words overflow-hidden">
+          <span className="whitespace-pre-wrap break-words">{content}</span>
         </div>
       </div>
     );
@@ -42,42 +42,47 @@ export function ChatBubble({ role, content }: ChatBubbleProps) {
 
   return (
     <div className="flex justify-start animate-fade-in">
-      <div className="max-w-[85%] sm:max-w-[75%] px-4 py-3 text-sm leading-relaxed bg-gemrock-bubble-ai text-foreground rounded-[20px] rounded-bl-md prose prose-invert prose-sm max-w-none">
-        <ReactMarkdown
-          components={{
-            code({ className, children, ...props }) {
-              const match = /language-(\w+)/.exec(className || '');
-              const codeString = String(children).replace(/\n$/, '');
-              if (match) {
-                return (
-                  <div className="relative group my-3 rounded-lg overflow-hidden border border-border">
-                    <div className="flex items-center justify-between px-3 py-1.5 bg-muted/50 text-xs text-muted-foreground border-b border-border">
-                      <span>{match[1]}</span>
-                      <CopyButton text={codeString} />
+      <div className="max-w-[85%] sm:max-w-[75%] px-4 py-3 text-sm leading-relaxed bg-gemrock-bubble-ai text-foreground rounded-[20px] rounded-bl-md overflow-hidden">
+        <div className="prose prose-invert prose-sm max-w-none break-words [&_pre]:overflow-x-auto [&_pre]:max-w-full [&_code]:break-all [&_p]:break-words">
+          <ReactMarkdown
+            components={{
+              code({ className, children, ...props }) {
+                const match = /language-(\w+)/.exec(className || '');
+                const codeString = String(children).replace(/\n$/, '');
+                if (match) {
+                  return (
+                    <div className="relative group my-3 rounded-lg overflow-hidden border border-border">
+                      <div className="flex items-center justify-between px-3 py-1.5 bg-muted/50 text-xs text-muted-foreground border-b border-border">
+                        <span>{match[1]}</span>
+                        <CopyButton text={codeString} />
+                      </div>
+                      <div className="overflow-x-auto">
+                        <SyntaxHighlighter style={oneDark} language={match[1]} PreTag="div"
+                          customStyle={{ margin: 0, borderRadius: 0, background: 'hsl(0 0% 8%)', fontSize: '0.75rem', padding: '0.75rem', overflowX: 'auto' }}
+                          wrapLongLines={false}>
+                          {codeString}
+                        </SyntaxHighlighter>
+                      </div>
                     </div>
-                    <SyntaxHighlighter style={oneDark} language={match[1]} PreTag="div"
-                      customStyle={{ margin: 0, borderRadius: 0, background: 'hsl(0 0% 8%)', fontSize: '0.8rem', padding: '1rem' }}>
-                      {codeString}
-                    </SyntaxHighlighter>
-                  </div>
+                  );
+                }
+                return (
+                  <code className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono text-accent-foreground break-all" {...props}>
+                    {children}
+                  </code>
                 );
-              }
-              return (
-                <code className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono text-accent-foreground" {...props}>
-                  {children}
-                </code>
-              );
-            },
-            p({ children }) { return <p className="mb-2 last:mb-0">{children}</p>; },
-            ul({ children }) { return <ul className="list-disc pl-4 mb-2 space-y-1">{children}</ul>; },
-            ol({ children }) { return <ol className="list-decimal pl-4 mb-2 space-y-1">{children}</ol>; },
-            a({ href, children }) {
-              return <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{children}</a>;
-            },
-          }}
-        >
-          {content}
-        </ReactMarkdown>
+              },
+              p({ children }) { return <p className="mb-2 last:mb-0 break-words">{children}</p>; },
+              ul({ children }) { return <ul className="list-disc pl-4 mb-2 space-y-1">{children}</ul>; },
+              ol({ children }) { return <ol className="list-decimal pl-4 mb-2 space-y-1">{children}</ol>; },
+              a({ href, children }) {
+                return <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline break-all">{children}</a>;
+              },
+            }}
+          >
+            {content}
+          </ReactMarkdown>
+        </div>
       </div>
     </div>
   );

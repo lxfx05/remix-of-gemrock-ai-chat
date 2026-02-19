@@ -1,27 +1,27 @@
 import { useState, useRef } from 'react';
-import { Send, Paperclip, X, FileText, Image, Film } from 'lucide-react';
+import { Send, Paperclip, X, FileText, Code, Globe } from 'lucide-react';
 
 interface ChatInputProps {
-  onSend: (message: string, files?: File[]) => void;
+  onSend: (message: string, files?: File[], webSearch?: boolean) => void;
   disabled?: boolean;
 }
 
 const FILE_TYPES = [
-  { label: 'Documenti', icon: FileText, accept: '.pdf,.doc,.docx,.txt,.csv,.xlsx' },
-  { label: 'Immagini', icon: Image, accept: '.png,.jpg,.jpeg,.gif,.webp,.svg' },
-  { label: 'Video', icon: Film, accept: '.mp4,.webm,.mov' },
+  { label: 'Documenti', icon: FileText, accept: '.txt,.pdf,.doc,.docx,.ppt,.pptx,.csv,.md,.json,.xml,.yaml,.toml,.log' },
+  { label: 'Codice', icon: Code, accept: '.html,.css,.js,.ts,.tsx,.jsx,.py,.c,.cpp,.h,.asm,.rb,.go,.rs,.java,.php,.sh,.sql' },
 ];
 
 export function ChatInput({ onSend, disabled }: ChatInputProps) {
   const [input, setInput] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [showAttach, setShowAttach] = useState(false);
+  const [webSearch, setWebSearch] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [currentAccept, setCurrentAccept] = useState('');
 
   const handleSend = () => {
     if (!input.trim() && files.length === 0) return;
-    onSend(input.trim(), files.length > 0 ? files : undefined);
+    onSend(input.trim(), files.length > 0 ? files : undefined, webSearch);
     setInput('');
     setFiles([]);
   };
@@ -68,6 +68,16 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
         </div>
       )}
 
+      {/* Web search indicator */}
+      {webSearch && (
+        <div className="flex items-center gap-1.5 mb-2 px-1">
+          <span className="flex items-center gap-1 bg-primary/15 text-primary text-[11px] font-medium px-2.5 py-1 rounded-lg animate-fade-in">
+            <Globe size={12} />
+            Ricerca web attiva
+          </span>
+        </div>
+      )}
+
       <div className="flex items-end gap-2 bg-secondary rounded-2xl px-3 sm:px-4 py-2 relative">
         {/* Attach button */}
         <div className="relative">
@@ -79,7 +89,6 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
             <Paperclip size={18} />
           </button>
 
-          {/* Attach menu */}
           {showAttach && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setShowAttach(false)} />
@@ -98,6 +107,20 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
             </>
           )}
         </div>
+
+        {/* Web search toggle */}
+        <button
+          onClick={() => setWebSearch(!webSearch)}
+          className={`p-2 rounded-xl transition-all active:scale-95 ${
+            webSearch
+              ? 'bg-primary/20 text-primary'
+              : 'hover:bg-muted text-muted-foreground hover:text-foreground'
+          }`}
+          type="button"
+          title="Ricerca web"
+        >
+          <Globe size={18} />
+        </button>
 
         <input
           ref={fileRef}
