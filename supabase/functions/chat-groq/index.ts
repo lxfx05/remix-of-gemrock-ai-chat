@@ -11,16 +11,54 @@ serve(async (req) => {
   }
 
   try {
+    const { messages, userName, webSearch } = await req.json();
+
+    const systemPrompt = userName
+      ? `Sei GemRock AI, un assistente intelligente e professionale. Rispondi sempre in modo chiaro e utile. Inizia sempre le tue risposte chiamando l'utente per nome: "${userName}". Usa emoji appropriate per rendere la conversazione più piacevole.${webSearch ? ' L\'utente ha attivato la modalità ricerca web. Fornisci risposte dettagliate e aggiornate, citando fonti quando possibile. Cerca di dare informazioni il più accurate e recenti possibile.' : ''}`
+      : `Sei GemRock AI, un assistente intelligente e professionale. Rispondi sempre in modo chiaro e utile. Usa emoji appropriate per rendere la conversazione più piacevole.${webSearch ? ' L\'utente ha attivato la modalità ricerca web. Fornisci risposte dettagliate e aggiornate, citando fonti quando possibile.' : ''}`;
+
+    // When web search is enabled, use Lovable AI Gateway with Gemini for better knowledge
+    if (webSearch) {
+      const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+      if (!LOVABLE_API_KEY) {
+        throw new Error('LOVABLE_API_KEY is not configured');
+      }
+
+      const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.5-flash',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            ...messages,
+          ],
+          stream: true,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('AI Gateway error:', response.status, errorText);
+        return new Response(JSON.stringify({ error: 'Errore nel servizio di ricerca web' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(response.body, {
+        headers: { ...corsHeaders, 'Content-Type': 'text/event-stream' },
+      });
+    }
+
+    // Standard mode: use Groq
     const GROQ_API_KEY = Deno.env.get('GROQ_API_KEY');
     if (!GROQ_API_KEY) {
       throw new Error('GROQ_API_KEY is not configured');
     }
-
-    const { messages, userName } = await req.json();
-
-    const systemPrompt = userName
-      ? `Sei GemRock AI, un assistente intelligente e professionale. Rispondi sempre in modo chiaro e utile. Inizia sempre le tue risposte chiamando l'utente per nome: "${userName}". Ad esempio: "Ciao ${userName}, ..." oppure "${userName}, ecco quello che ho trovato...". Usa emoji appropriate per rendere la conversazione più piacevole.`
-      : `Sei GemRock AI, un assistente intelligente e professionale. Rispondi sempre in modo chiaro e utile. Usa emoji appropriate per rendere la conversazione più piacevole.`;
 
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
