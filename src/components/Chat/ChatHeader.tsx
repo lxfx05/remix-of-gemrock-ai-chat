@@ -1,11 +1,12 @@
-import { Menu } from 'lucide-react';
+import { Menu, LogIn } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 
 interface ChatHeaderProps {
   onToggleSidebar: () => void;
+  onLogin?: () => void;
 }
 
-export function ChatHeader({ onToggleSidebar }: ChatHeaderProps) {
+export function ChatHeader({ onToggleSidebar, onLogin }: ChatHeaderProps) {
   const { user } = useAuth();
   const avatarUrl = user?.user_metadata?.avatar_url || user?.user_metadata?.picture;
 
@@ -42,7 +43,15 @@ export function ChatHeader({ onToggleSidebar }: ChatHeaderProps) {
           >
             {user.user_metadata?.first_name?.[0] || user.email?.[0]?.toUpperCase() || '?'}
           </div>
-        ) : null}
+        ) : (
+          <button
+            onClick={onLogin}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-medium hover:brightness-110 transition-all active:scale-95"
+          >
+            <LogIn size={14} />
+            Accedi
+          </button>
+        )}
       </div>
     </header>
   );

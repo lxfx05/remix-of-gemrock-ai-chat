@@ -236,7 +236,7 @@ export function ChatPage() {
         onNewChat={handleNewChat}
       />
 
-      <ChatHeader onToggleSidebar={() => setSidebarOpen(prev => !prev)} />
+      <ChatHeader onToggleSidebar={() => setSidebarOpen(prev => !prev)} onLogin={() => setShowAuth(true)} />
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin px-3 sm:px-4 md:px-6 lg:px-8 py-4 space-y-3">
         {messages.length === 0 && (
