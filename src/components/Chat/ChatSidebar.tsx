@@ -110,7 +110,7 @@ export function ChatSidebar({ open, onClose, activeConversationId, onSelectConve
       )}
 
       <div
-        className={`fixed top-0 left-0 h-full w-[280px] sm:w-80 bg-card border-r border-border z-50 flex flex-col transition-transform duration-300 ease-out ${
+        className={`fixed top-0 left-0 h-[100dvh] w-[280px] sm:w-80 bg-card border-r border-border z-50 flex flex-col transition-transform duration-300 ease-out ${
           open ? 'translate-x-0' : '-translate-x-full'
         }`}
       >

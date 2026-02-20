@@ -52,7 +52,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
   };
 
   return (
-    <div className="p-2 sm:p-3 md:p-4 border-t border-border bg-card/80 backdrop-blur-xl">
+    <div className="p-2 sm:p-3 md:p-4 border-t border-border bg-card/80 backdrop-blur-xl pb-[env(safe-area-inset-bottom,8px)]">
       {/* File previews */}
       {files.length > 0 && (
         <div className="flex gap-2 mb-2 flex-wrap px-1">
