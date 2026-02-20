@@ -107,8 +107,16 @@ export function AuthModal({ open, onClose }: AuthModalProps) {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
         body: JSON.stringify({ email, action: 'send' }),
       });
-      if (resp.ok) { toast.success('Codice di reset inviato!'); setStep('forgot-otp'); }
-      else { const d = await resp.json(); toast.error(d.error || 'Errore'); }
+      if (resp.ok) { toast.success('Codice di reset inviato alla tua email!'); setStep('forgot-otp'); }
+      else {
+        const d = await resp.json();
+        if (d.notFound) {
+          toast.error('Email non registrata. Vuoi registrarti?');
+          setStep('email-form');
+        } else {
+          toast.error(d.error || 'Errore');
+        }
+      }
     } catch { toast.error('Errore di connessione'); }
     setLoading(false);
   };
