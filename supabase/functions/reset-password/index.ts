@@ -33,9 +33,8 @@ serve(async (req) => {
       const { data: users } = await supabase.auth.admin.listUsers();
       const userExists = users?.users?.some(u => u.email === email);
       if (!userExists) {
-        // Don't reveal if email exists - just say "sent"
-        return new Response(JSON.stringify({ success: true }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        return new Response(JSON.stringify({ error: 'Email non registrata. Vuoi registrarti invece?', notFound: true }), {
+          status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
 
