@@ -6,6 +6,19 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
+function validatePassword(password: string, email: string): string | null {
+  if (password.length < 8) return 'La password deve avere almeno 8 caratteri';
+  if (!/[A-Z]/.test(password)) return 'La password deve contenere almeno una lettera maiuscola';
+  if (!/[a-z]/.test(password)) return 'La password deve contenere almeno una lettera minuscola';
+  if (!/[0-9]/.test(password)) return 'La password deve contenere almeno un numero';
+  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) return 'La password deve contenere almeno un carattere speciale';
+  const emailLocal = email.split('@')[0].toLowerCase();
+  if (emailLocal.length >= 3 && password.toLowerCase().includes(emailLocal)) {
+    return 'La password non può contenere il tuo indirizzo email';
+  }
+  return null;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -29,7 +42,6 @@ serve(async (req) => {
         });
       }
 
-      // Check if user exists
       const { data: users } = await supabase.auth.admin.listUsers();
       const userExists = users?.users?.some(u => u.email === email);
       if (!userExists) {
@@ -77,7 +89,8 @@ serve(async (req) => {
       });
 
       if (!emailRes.ok) {
-        console.error('Resend error:', await emailRes.text());
+        const errText = await emailRes.text();
+        console.error('Resend error:', errText);
         return new Response(JSON.stringify({ error: "Errore nell'invio email" }), {
           status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -92,6 +105,14 @@ serve(async (req) => {
     if (action === 'reset') {
       if (!email || !otp || !newPassword) {
         return new Response(JSON.stringify({ error: 'Tutti i campi sono obbligatori' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Validate new password
+      const pwError = validatePassword(newPassword, email);
+      if (pwError) {
+        return new Response(JSON.stringify({ error: pwError }), {
           status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
@@ -115,7 +136,6 @@ serve(async (req) => {
         });
       }
 
-      // Find user and update password
       const { data: users } = await supabase.auth.admin.listUsers();
       const targetUser = users?.users?.find(u => u.email === email);
       if (!targetUser) {

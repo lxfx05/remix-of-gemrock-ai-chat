@@ -6,19 +6,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
-function validatePassword(password: string, email: string): string | null {
-  if (password.length < 8) return 'La password deve avere almeno 8 caratteri';
-  if (!/[A-Z]/.test(password)) return 'La password deve contenere almeno una lettera maiuscola';
-  if (!/[a-z]/.test(password)) return 'La password deve contenere almeno una lettera minuscola';
-  if (!/[0-9]/.test(password)) return 'La password deve contenere almeno un numero';
-  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) return 'La password deve contenere almeno un carattere speciale';
-  const emailLocal = email.split('@')[0].toLowerCase();
-  if (emailLocal.length >= 3 && password.toLowerCase().includes(emailLocal)) {
-    return 'La password non può contenere il tuo indirizzo email';
-  }
-  return null;
-}
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -32,32 +19,13 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const { email, firstName, lastName, phone, password } = await req.json();
-
-    if (!email || !firstName || !lastName || !phone || !password) {
-      return new Response(JSON.stringify({ error: 'Tutti i campi sono obbligatori' }), {
+    const { email } = await req.json();
+    if (!email) {
+      return new Response(JSON.stringify({ error: 'Email obbligatoria' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Validate password
-    const pwError = validatePassword(password, email);
-    if (pwError) {
-      return new Response(JSON.stringify({ error: pwError }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Check if email already registered
-    const { data: existingUsers } = await supabase.auth.admin.listUsers();
-    const emailExists = existingUsers?.users?.some(u => u.email === email);
-    if (emailExists) {
-      return new Response(JSON.stringify({ error: 'Email già registrata. Usa il login.' }), {
-        status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Generate 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
@@ -68,10 +36,6 @@ serve(async (req) => {
     const { error: insertError } = await supabase.from('email_otps').insert({
       email,
       otp_code: otp,
-      phone,
-      first_name: firstName,
-      last_name: lastName,
-      password_hash: password,
       expires_at: expiresAt.toISOString(),
     });
 
@@ -92,13 +56,13 @@ serve(async (req) => {
       body: JSON.stringify({
         from: 'GemRock <onboarding@resend.dev>',
         to: [email],
-        subject: `${otp} - Codice di verifica GemRock`,
+        subject: `${otp} - Verifica accesso GemRock`,
         html: `
           <div style="font-family: sans-serif; max-width: 400px; margin: 0 auto; padding: 32px; background: #0a0a0a; color: #f0f0f0; border-radius: 16px;">
             <div style="text-align: center; margin-bottom: 24px;">
               <span style="font-size: 48px;">💎</span>
               <h1 style="font-size: 20px; margin: 8px 0 4px;">GemRock AI</h1>
-              <p style="color: #888; font-size: 13px;">Verifica il tuo indirizzo email</p>
+              <p style="color: #888; font-size: 13px;">Verifica di sicurezza</p>
             </div>
             <div style="background: #1a1a1a; border-radius: 12px; padding: 24px; text-align: center;">
               <p style="color: #888; font-size: 13px; margin-bottom: 12px;">Il tuo codice di verifica è:</p>
@@ -114,7 +78,7 @@ serve(async (req) => {
     if (!emailRes.ok) {
       const errText = await emailRes.text();
       console.error('Resend error:', errText);
-      return new Response(JSON.stringify({ error: 'Errore nell\'invio email' }), {
+      return new Response(JSON.stringify({ error: "Errore nell'invio email" }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -123,7 +87,7 @@ serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (e) {
-    console.error('Send OTP error:', e);
+    console.error('Send login OTP error:', e);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : 'Errore sconosciuto' }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { X, Mail, ArrowLeft, Loader2, KeyRound } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { X, Mail, ArrowLeft, Loader2, KeyRound, Eye, EyeOff } from 'lucide-react';
 import { lovable } from '@/integrations/lovable';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -9,7 +9,20 @@ interface AuthModalProps {
   onClose: () => void;
 }
 
-type AuthStep = 'choose' | 'email-form' | 'otp' | 'email-login' | 'forgot-send' | 'forgot-otp' | 'forgot-newpw';
+type AuthStep = 'choose' | 'email-form' | 'otp' | 'email-login' | 'forgot-send' | 'forgot-otp' | 'forgot-newpw' | 'oauth-otp';
+
+function validatePassword(password: string, email: string): string | null {
+  if (password.length < 8) return 'Minimo 8 caratteri';
+  if (!/[A-Z]/.test(password)) return 'Serve almeno una lettera maiuscola';
+  if (!/[a-z]/.test(password)) return 'Serve almeno una lettera minuscola';
+  if (!/[0-9]/.test(password)) return 'Serve almeno un numero';
+  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) return 'Serve almeno un carattere speciale (!@#$%...)';
+  const emailLocal = email.split('@')[0].toLowerCase();
+  if (emailLocal.length >= 3 && password.toLowerCase().includes(emailLocal)) {
+    return 'La password non può contenere parti della tua email';
+  }
+  return null;
+}
 
 export function AuthModal({ open, onClose }: AuthModalProps) {
   const [step, setStep] = useState<AuthStep>('choose');
@@ -21,6 +34,48 @@ export function AuthModal({ open, onClose }: AuthModalProps) {
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [pwError, setPwError] = useState<string | null>(null);
+  const [oauthPendingUserId, setOauthPendingUserId] = useState<string | null>(null);
+
+  // Listen for OAuth login and trigger OTP verification
+  useEffect(() => {
+    if (!open) return;
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session?.user) {
+        const provider = session.user.app_metadata?.provider;
+        if (provider === 'google' || provider === 'apple') {
+          // OAuth login detected - send OTP for extra verification
+          const userEmail = session.user.email;
+          if (userEmail) {
+            setEmail(userEmail);
+            setOauthPendingUserId(session.user.id);
+            // Sign out temporarily until OTP is verified
+            await supabase.auth.signOut();
+            // Send OTP
+            try {
+              const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-login-otp`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: userEmail }),
+              });
+              if (resp.ok) {
+                toast.success('Codice di verifica inviato alla tua email!');
+                setStep('oauth-otp');
+              } else {
+                const d = await resp.json();
+                toast.error(d.error || 'Errore invio OTP');
+              }
+            } catch {
+              toast.error('Errore di connessione');
+            }
+          }
+        }
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [open]);
 
   if (!open) return null;
 
@@ -34,6 +89,10 @@ export function AuthModal({ open, onClose }: AuthModalProps) {
     setPhone('');
     setOtp('');
     setNewPassword('');
+    setShowPassword(false);
+    setShowNewPassword(false);
+    setPwError(null);
+    setOauthPendingUserId(null);
   };
 
   const handleClose = () => { reset(); onClose(); };
@@ -48,11 +107,23 @@ export function AuthModal({ open, onClose }: AuthModalProps) {
     if (result?.error) toast.error(result.error.message || 'Errore login Apple');
   };
 
+  const handlePasswordChange = (value: string, field: 'password' | 'newPassword') => {
+    if (field === 'password') {
+      setPassword(value);
+      setPwError(value ? validatePassword(value, email) : null);
+    } else {
+      setNewPassword(value);
+      setPwError(value ? validatePassword(value, email) : null);
+    }
+  };
+
   const handleEmailSignup = async () => {
     if (!email || !password || !firstName || !lastName || !phone) {
       toast.error('Compila tutti i campi');
       return;
     }
+    const err = validatePassword(password, email);
+    if (err) { toast.error(err); return; }
     setLoading(true);
     try {
       const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-otp`, {
@@ -84,6 +155,39 @@ export function AuthModal({ open, onClose }: AuthModalProps) {
       const data = await resp.json();
       if (!resp.ok) toast.error(data.error || 'Codice non valido');
       else { toast.success('Account creato! Effettua il login.'); setStep('email-login'); }
+    } catch { toast.error('Errore di connessione'); }
+    setLoading(false);
+  };
+
+  const handleVerifyOauthOtp = async () => {
+    if (!otp || !oauthPendingUserId) return;
+    setLoading(true);
+    try {
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/verify-login-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, otp, userId: oauthPendingUserId }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        toast.error(data.error || 'Codice non valido');
+      } else {
+        // Sign the user back in with the generated token
+        if (data.access_token && data.refresh_token) {
+          const { error } = await supabase.auth.setSession({
+            access_token: data.access_token,
+            refresh_token: data.refresh_token,
+          });
+          if (error) {
+            toast.error('Errore di autenticazione');
+          } else {
+            toast.success('Accesso verificato!');
+            handleClose();
+          }
+        } else {
+          toast.error('Errore nel completamento login');
+        }
+      }
     } catch { toast.error('Errore di connessione'); }
     setLoading(false);
   };
@@ -123,7 +227,8 @@ export function AuthModal({ open, onClose }: AuthModalProps) {
 
   const handleForgotVerifyAndReset = async () => {
     if (!otp || !newPassword) { toast.error('Compila tutti i campi'); return; }
-    if (newPassword.length < 6) { toast.error('La password deve avere almeno 6 caratteri'); return; }
+    const err = validatePassword(newPassword, email);
+    if (err) { toast.error(err); return; }
     setLoading(true);
     try {
       const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reset-password`, {
@@ -141,6 +246,7 @@ export function AuthModal({ open, onClose }: AuthModalProps) {
   const goBack = () => {
     if (step === 'forgot-otp') setStep('forgot-send');
     else if (step === 'forgot-send') setStep('email-login');
+    else if (step === 'oauth-otp') setStep('choose');
     else setStep('choose');
   };
 
@@ -150,12 +256,43 @@ export function AuthModal({ open, onClose }: AuthModalProps) {
     'otp': 'Verifica Email',
     'email-login': 'Accedi',
     'forgot-send': 'Reset Password',
-    'forgot-otp': 'Nuovo Password',
-    'forgot-newpw': 'Nuovo Password',
+    'forgot-otp': 'Nuova Password',
+    'forgot-newpw': 'Nuova Password',
+    'oauth-otp': 'Verifica Identità',
   };
 
   const inputCls = "w-full bg-secondary rounded-xl px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-1 focus:ring-primary";
   const btnCls = "w-full py-3 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:brightness-110 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2";
+
+  const PasswordInput = ({ value, onChange, placeholder, show, onToggle }: { value: string; onChange: (v: string) => void; placeholder: string; show: boolean; onToggle: () => void }) => (
+    <div className="relative">
+      <input type={show ? 'text' : 'password'} placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} className={inputCls + ' pr-10'} />
+      <button type="button" onClick={onToggle} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+        {show ? <EyeOff size={16} /> : <Eye size={16} />}
+      </button>
+    </div>
+  );
+
+  const PasswordRequirements = ({ password, email: em }: { password: string; email: string }) => {
+    if (!password) return null;
+    const checks = [
+      { ok: password.length >= 8, label: 'Min. 8 caratteri' },
+      { ok: /[A-Z]/.test(password), label: 'Lettera maiuscola' },
+      { ok: /[a-z]/.test(password), label: 'Lettera minuscola' },
+      { ok: /[0-9]/.test(password), label: 'Un numero' },
+      { ok: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password), label: 'Carattere speciale' },
+      { ok: !(em.split('@')[0].length >= 3 && password.toLowerCase().includes(em.split('@')[0].toLowerCase())), label: 'Non contiene email' },
+    ];
+    return (
+      <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 px-1">
+        {checks.map((c, i) => (
+          <span key={i} className={`text-[10px] flex items-center gap-1 ${c.ok ? 'text-green-500' : 'text-muted-foreground'}`}>
+            {c.ok ? '✓' : '○'} {c.label}
+          </span>
+        ))}
+      </div>
+    );
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm animate-fade-in">
@@ -172,7 +309,7 @@ export function AuthModal({ open, onClose }: AuthModalProps) {
 
         <div className="text-center mb-4">
           <div className="w-11 h-11 rounded-2xl gemrock-gradient flex items-center justify-center mx-auto mb-2.5 gemrock-glow">
-            <span className="text-xl">{step.startsWith('forgot') ? '🔑' : '💎'}</span>
+            <span className="text-xl">{step.startsWith('forgot') || step === 'oauth-otp' ? '🔑' : '💎'}</span>
           </div>
           <h2 className="text-base font-semibold text-foreground">{titles[step]}</h2>
         </div>
@@ -210,7 +347,8 @@ export function AuthModal({ open, onClose }: AuthModalProps) {
             </div>
             <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} />
             <input type="tel" placeholder="Telefono" value={phone} onChange={(e) => setPhone(e.target.value)} className={inputCls} />
-            <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className={inputCls} />
+            <PasswordInput value={password} onChange={(v) => handlePasswordChange(v, 'password')} placeholder="Password" show={showPassword} onToggle={() => setShowPassword(!showPassword)} />
+            <PasswordRequirements password={password} email={email} />
             <button onClick={handleEmailSignup} disabled={loading} className={btnCls}>
               {loading && <Loader2 size={16} className="animate-spin" />}
               Invia codice di verifica
@@ -230,10 +368,23 @@ export function AuthModal({ open, onClose }: AuthModalProps) {
           </div>
         )}
 
+        {step === 'oauth-otp' && (
+          <div className="space-y-2.5">
+            <p className="text-xs text-muted-foreground text-center">Per la tua sicurezza, verifica la tua identità</p>
+            <p className="text-xs text-muted-foreground text-center">Codice inviato a <span className="text-foreground font-medium">{email}</span></p>
+            <input type="text" placeholder="Codice a 6 cifre" value={otp} maxLength={6} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+              className="w-full bg-secondary rounded-xl px-3 py-2.5 text-center text-lg font-mono tracking-[0.5em] text-foreground placeholder:text-muted-foreground placeholder:tracking-normal placeholder:text-sm outline-none focus:ring-1 focus:ring-primary" />
+            <button onClick={handleVerifyOauthOtp} disabled={loading || otp.length < 6} className={btnCls}>
+              {loading && <Loader2 size={16} className="animate-spin" />}
+              Verifica e Accedi
+            </button>
+          </div>
+        )}
+
         {step === 'email-login' && (
           <div className="space-y-2.5">
             <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} />
-            <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleEmailLogin()} className={inputCls} />
+            <PasswordInput value={password} onChange={(v) => setPassword(v)} placeholder="Password" show={showPassword} onToggle={() => setShowPassword(!showPassword)} />
             <button onClick={handleEmailLogin} disabled={loading} className={btnCls}>
               {loading && <Loader2 size={16} className="animate-spin" />}
               Accedi
@@ -266,8 +417,9 @@ export function AuthModal({ open, onClose }: AuthModalProps) {
             <p className="text-xs text-muted-foreground text-center">Codice inviato a <span className="text-foreground font-medium">{email}</span></p>
             <input type="text" placeholder="Codice a 6 cifre" value={otp} maxLength={6} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
               className="w-full bg-secondary rounded-xl px-3 py-2.5 text-center text-lg font-mono tracking-[0.5em] text-foreground placeholder:text-muted-foreground placeholder:tracking-normal placeholder:text-sm outline-none focus:ring-1 focus:ring-primary" />
-            <input type="password" placeholder="Nuova password (min 6 caratteri)" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className={inputCls} />
-            <button onClick={handleForgotVerifyAndReset} disabled={loading || otp.length < 6 || newPassword.length < 6} className={btnCls}>
+            <PasswordInput value={newPassword} onChange={(v) => handlePasswordChange(v, 'newPassword')} placeholder="Nuova password" show={showNewPassword} onToggle={() => setShowNewPassword(!showNewPassword)} />
+            <PasswordRequirements password={newPassword} email={email} />
+            <button onClick={handleForgotVerifyAndReset} disabled={loading || otp.length < 6 || !!validatePassword(newPassword, email)} className={btnCls}>
               {loading && <Loader2 size={16} className="animate-spin" />}
               Reimposta password
             </button>

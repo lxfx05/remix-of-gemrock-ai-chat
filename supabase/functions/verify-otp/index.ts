@@ -76,7 +76,7 @@ serve(async (req) => {
       });
     }
 
-    // Mark OTP as verified and clean up
+    // Clean up OTP
     await supabase.from('email_otps').delete().eq('email', email);
 
     return new Response(JSON.stringify({ 
