@@ -25,8 +25,8 @@ serve(async (req) => {
   }
 
   try {
-    const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
-    if (!RESEND_API_KEY) throw new Error('RESEND_API_KEY not configured');
+    const BREVO_API_KEY = Deno.env.get('BREVO_API_KEY');
+    if (!BREVO_API_KEY) throw new Error('BREVO_API_KEY not configured');
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -82,18 +82,18 @@ serve(async (req) => {
       });
     }
 
-    // Send OTP email via Resend
-    const emailRes = await fetch('https://api.resend.com/emails', {
+    // Send OTP email via Brevo
+    const emailRes = await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${RESEND_API_KEY}`,
+        'api-key': BREVO_API_KEY,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'GemRock <onboarding@resend.dev>',
-        to: [email],
+        sender: { name: 'GemRock', email: 'noreply@gemrock.ai' },
+        to: [{ email }],
         subject: `${otp} - Codice di verifica GemRock`,
-        html: `
+        htmlContent: `
           <div style="font-family: sans-serif; max-width: 400px; margin: 0 auto; padding: 32px; background: #0a0a0a; color: #f0f0f0; border-radius: 16px;">
             <div style="text-align: center; margin-bottom: 24px;">
               <span style="font-size: 48px;">💎</span>
@@ -113,7 +113,7 @@ serve(async (req) => {
 
     if (!emailRes.ok) {
       const errText = await emailRes.text();
-      console.error('Resend error:', errText);
+      console.error('Brevo error:', errText);
       return new Response(JSON.stringify({ error: 'Errore nell\'invio email' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
