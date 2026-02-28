@@ -24,6 +24,40 @@ function validatePassword(password: string, email: string): string | null {
   return null;
 }
 
+const inputCls = "w-full bg-secondary rounded-xl px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-1 focus:ring-primary";
+
+function PasswordInput({ value, onChange, placeholder, show, onToggle }: { value: string; onChange: (v: string) => void; placeholder: string; show: boolean; onToggle: () => void }) {
+  return (
+    <div className="relative">
+      <input type={show ? 'text' : 'password'} placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} className={inputCls + ' pr-10'} />
+      <button type="button" onClick={onToggle} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+        {show ? <EyeOff size={16} /> : <Eye size={16} />}
+      </button>
+    </div>
+  );
+}
+
+function PasswordRequirements({ password, email }: { password: string; email: string }) {
+  if (!password) return null;
+  const checks = [
+    { ok: password.length >= 8, label: 'Min. 8 caratteri' },
+    { ok: /[A-Z]/.test(password), label: 'Lettera maiuscola' },
+    { ok: /[a-z]/.test(password), label: 'Lettera minuscola' },
+    { ok: /[0-9]/.test(password), label: 'Un numero' },
+    { ok: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password), label: 'Carattere speciale' },
+    { ok: !(email.split('@')[0].length >= 3 && password.toLowerCase().includes(email.split('@')[0].toLowerCase())), label: 'Non contiene email' },
+  ];
+  return (
+    <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 px-1">
+      {checks.map((c, i) => (
+        <span key={i} className={`text-[10px] flex items-center gap-1 ${c.ok ? 'text-green-500' : 'text-muted-foreground'}`}>
+          {c.ok ? '✓' : '○'} {c.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function AuthModal({ open, onClose }: AuthModalProps) {
   const [step, setStep] = useState<AuthStep>('choose');
   const [loading, setLoading] = useState(false);
@@ -261,38 +295,7 @@ export function AuthModal({ open, onClose }: AuthModalProps) {
     'oauth-otp': 'Verifica Identità',
   };
 
-  const inputCls = "w-full bg-secondary rounded-xl px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-1 focus:ring-primary";
   const btnCls = "w-full py-3 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:brightness-110 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2";
-
-  const PasswordInput = ({ value, onChange, placeholder, show, onToggle }: { value: string; onChange: (v: string) => void; placeholder: string; show: boolean; onToggle: () => void }) => (
-    <div className="relative">
-      <input type={show ? 'text' : 'password'} placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} className={inputCls + ' pr-10'} />
-      <button type="button" onClick={onToggle} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-        {show ? <EyeOff size={16} /> : <Eye size={16} />}
-      </button>
-    </div>
-  );
-
-  const PasswordRequirements = ({ password, email: em }: { password: string; email: string }) => {
-    if (!password) return null;
-    const checks = [
-      { ok: password.length >= 8, label: 'Min. 8 caratteri' },
-      { ok: /[A-Z]/.test(password), label: 'Lettera maiuscola' },
-      { ok: /[a-z]/.test(password), label: 'Lettera minuscola' },
-      { ok: /[0-9]/.test(password), label: 'Un numero' },
-      { ok: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password), label: 'Carattere speciale' },
-      { ok: !(em.split('@')[0].length >= 3 && password.toLowerCase().includes(em.split('@')[0].toLowerCase())), label: 'Non contiene email' },
-    ];
-    return (
-      <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 px-1">
-        {checks.map((c, i) => (
-          <span key={i} className={`text-[10px] flex items-center gap-1 ${c.ok ? 'text-green-500' : 'text-muted-foreground'}`}>
-            {c.ok ? '✓' : '○'} {c.label}
-          </span>
-        ))}
-      </div>
-    );
-  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm animate-fade-in">
