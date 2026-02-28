@@ -13,7 +13,7 @@ serve(async (req) => {
 
   try {
     const BREVO_API_KEY = Deno.env.get('BREVO_API_KEY');
-    console.log('BREVO_API_KEY exists:', !!BREVO_API_KEY, 'length:', BREVO_API_KEY?.length, 'starts:', BREVO_API_KEY?.substring(0, 8));
+    console.log('BREVO_API_KEY configured:', !!BREVO_API_KEY);
     if (!BREVO_API_KEY) throw new Error('BREVO_API_KEY not configured');
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;

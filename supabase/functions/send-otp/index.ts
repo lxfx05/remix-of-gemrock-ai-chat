@@ -111,9 +111,10 @@ serve(async (req) => {
       }),
     });
 
+    const emailResText = await emailRes.text();
+    console.log('Brevo response status:', emailRes.status, 'body:', emailResText);
     if (!emailRes.ok) {
-      const errText = await emailRes.text();
-      console.error('Brevo error:', errText);
+      console.error('Brevo error:', emailResText);
       return new Response(JSON.stringify({ error: 'Errore nell\'invio email' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
