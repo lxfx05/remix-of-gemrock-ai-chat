@@ -1,9 +1,41 @@
-import { Menu, LogIn } from 'lucide-react';
+import { Menu, LogIn, Bell } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { sendPersonalNotification } from '@/services/notificationService';
+import { toast } from 'sonner';
+import { useState } from 'react';
 
 interface ChatHeaderProps {
   onToggleSidebar: () => void;
   onLogin?: () => void;
+}
+
+function NotifyButton() {
+  const [sending, setSending] = useState(false);
+
+  const handleTest = async () => {
+    setSending(true);
+    try {
+      await sendPersonalNotification({
+        subject: '🔔 Test Notifica GemRock',
+        body: '<h2>Ciao!</h2><p>Questa è una notifica di test inviata dalla tua app <strong>GemRock</strong>.</p><p style="color:#888;font-size:12px;">Inviata il ' + new Date().toLocaleString('it-IT') + '</p>',
+      });
+      toast.success('Email di test inviata! Controlla la inbox.');
+    } catch {
+      toast.error('Errore nell\'invio della notifica');
+    }
+    setSending(false);
+  };
+
+  return (
+    <button
+      onClick={handleTest}
+      disabled={sending}
+      className="p-2 rounded-xl hover:bg-secondary transition-all active:scale-95 text-muted-foreground hover:text-foreground disabled:opacity-50"
+      title="Invia notifica email di test"
+    >
+      <Bell size={18} className={sending ? 'animate-pulse' : ''} />
+    </button>
+  );
 }
 
 export function ChatHeader({ onToggleSidebar, onLogin }: ChatHeaderProps) {
@@ -28,7 +60,8 @@ export function ChatHeader({ onToggleSidebar, onLogin }: ChatHeaderProps) {
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
+        {user && <NotifyButton />}
         {user && avatarUrl ? (
           <img
             src={avatarUrl}
